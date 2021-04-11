@@ -1,4 +1,5 @@
 #include "ofxFaceShift.h"
+#include <string>
 
 const unsigned short referenceVersionNumber = 1;
 const unsigned int maxPacketSize = 1024;
@@ -13,7 +14,7 @@ enum {
 
 void checkVersion(unsigned short versionNumber) {
 	static bool versionChecked = false;
-	if(!versionChecked && versionNumber != referenceVersionNumber) {
+	if (!versionChecked && versionNumber != referenceVersionNumber) {
 		ofLogWarning() << "FaceShift Studio binary protocol is version " << versionNumber << " but ofxFaceShift uses version " << referenceVersionNumber << ". There may be an incompatibility." << endl;
 	}
 	versionChecked = true;
@@ -21,7 +22,7 @@ void checkVersion(unsigned short versionNumber) {
 
 template <class T>
 void readRaw(stringstream& stream, T& data) {
-	stream.read((char*) &data, sizeof(T));
+	stream.read((char*)&data, sizeof(T));
 }
 
 ofVec3f getNormal(const ofVec3f& v1, const ofVec3f& v2, const ofVec3f& v3) {
@@ -32,37 +33,79 @@ ofVec3f getNormal(const ofVec3f& v1, const ofVec3f& v2, const ofVec3f& v3) {
 	return normal;
 }
 
+
+// Changes have been made, due to errors thrown back from Visual Studio 2017 using of_v0.11.2_vs2017_release lirbary. ofx library does not compile using Visual Studio 2019. - Leona
+
+// Error C2664	'void ofMesh_<ofDefaultVertexType,ofDefaultNormalType,ofDefaultColorType,ofDefaultTexCoordType>::addNormals(const N *,size_t)': cannot convert argument 1 from 'std::vector<ofVec3f,std::allocator<_Ty>>' to 'const std::vector<V,std::allocator<_Ty>> 
+
+//void buildNormalsAverage(ofMesh& mesh) {
+	//vector<ofIndexType>& indices = mesh.getIndices();
+	//vector<ofVec3f> normals(mesh.getNumVertices());
+	//for (int i = 0; i < indices.size(); i += 3) {
+		//int i0 = indices[i + 0], i1 = indices[i + 1], i2 = indices[i + 2];
+		//ofVec3f normal = getNormal(mesh.getVertices()[i0], mesh.getVertices()[i1], mesh.getVertices()[i2]);
+		//normals[i0] += normal;
+		//normals[i1] += normal;
+		//normals[i2] += normal;
+	//}
+	//for (int i = 0; i < normals.size(); i++) {
+		//normals[i].normalize();
+	//}
+	//mesh.addNormals(normals);
+//}
+
 void buildNormalsAverage(ofMesh& mesh) {
-	vector<ofIndexType>& indices = mesh.getIndices();
-	vector<ofVec3f> normals(mesh.getNumVertices());
-	for(int i = 0; i < indices.size(); i += 3) {
-		int i0 = indices[i + 0], i1 = indices[i + 1], i2 = indices[i + 2];
-		ofVec3f normal = getNormal(mesh.getVertices()[i0], mesh.getVertices()[i1], mesh.getVertices()[i2]);
-		normals[i0] += normal;
-		normals[i1] += normal;
-		normals[i2] += normal;
+	//The number of the vertices
+	int nV = mesh.getNumVertices();
+
+	//The number of the triangles
+	int nT = mesh.getNumIndices() / 3;
+
+	vector<glm::vec3> norm(nV); //Array for the normals
+
+	//Scan all the triangles. For each triangle add its
+	//normal to norm's vectors of triangle's vertices
+	for (int t = 0; t < nT; t++) {
+		//Get indices of the triangle t
+		int i1 = mesh.getIndex(3 * t);
+		int i2 = mesh.getIndex(3 * t + 1);
+		int i3 = mesh.getIndex(3 * t + 2);
+		//Get vertices of the triangle
+		const glm::vec3& v1 = mesh.getVertex(i1);
+		const glm::vec3& v2 = mesh.getVertex(i2);
+		const glm::vec3& v3 = mesh.getVertex(i3);
+
+		//Compute the triangle's normal
+		glm::vec3 dir = glm::normalize(glm::cross(v2 - v1, v3 - v1));
+		
+		//Accumulate it to norm array for i1, i2, i3
+		norm[i1] += dir;
+		norm[i2] += dir;
+		norm[i3] += dir;
 	}
-	for(int i = 0; i < normals.size(); i++) {
-		normals[i].normalize();
+	//Normalize the normal's length
+	for (int i = 0; i < nV; i++) {
+		norm[i] = glm::normalize(norm[i]);
 	}
-	mesh.addNormals(normals);
+	mesh.addNormals(norm);
 }
 
 void buildNormalsFaces(ofMesh& mesh) {
 	mesh.clearNormals();
-	for(int i = 0; i < mesh.getNumVertices(); i += 3) {
+	for (int i = 0; i < mesh.getNumVertices(); i += 3) {
 		int i0 = i + 0, i1 = i + 1, i2 = i + 2;
 		ofVec3f normal = getNormal(mesh.getVertices()[i0], mesh.getVertices()[i1], mesh.getVertices()[i2]);
-		for(int j = 0; j < 3; j++) {
+		for (int j = 0; j < 3; j++) {
 			mesh.addNormal(normal);
 		}
 	}
 }
 
 void buildNormals(ofMesh& mesh) {
-	if(mesh.getNumIndices() > 0) {
+	if (mesh.getNumIndices() > 0) {
 		buildNormalsAverage(mesh);
-	} else {
+	}
+	else {
 		buildNormalsFaces(mesh);
 	}
 }
@@ -74,57 +117,62 @@ ofMesh loadObj(string filename, bool smooth = false) {
 	vector<ofVec3f> v;
 	vector<ofVec2f> vt;
 	ofFile f(filename);
-	while(!f.eof()) {
+	while (!f.eof()) {
 		string c;
 		f >> c;
-		if(c.size()) {
-			if(c == "v") {
+		if (c.size()) {
+			if (c == "v") {
 				float x, y, z;
 				f >> x >> y >> z;
-				if(smooth) {
+				if (smooth) {
 					m.addVertex(ofVec3f(x, y, z));
-				} else {
+				}
+				else {
 					v.push_back(ofVec3f(x, y, z));
 				}
-			} else if(c == "vt") {
+			}
+			else if (c == "vt") {
 				float u, v;
 				f >> u >> v;
-				if(!smooth) {
+				if (!smooth) {
 					vt.push_back(ofVec2f(u, v));
 				}
-			} else if(c == "f") {
+			}
+			else if (c == "f") {
 				string l;
 				getline(f, l);
 				replace(l.begin(), l.end(), '/', ' ');
 				istringstream ls(l);
 				int vi1, vti1, vi2, vti2, vi3, vti3;
 				ls >> vi1 >> vti1 >> vi2 >> vti2 >> vi3 >> vti3;
-				if(smooth) {
-					m.addIndex(vi1-1);
-					m.addIndex(vi2-1);
-					m.addIndex(vi3-1);
-				} else {
-					m.addVertex(v[vi1-1]);
-					m.addVertex(v[vi2-1]);
-					m.addVertex(v[vi3-1]);
-					m.addTexCoord(vt[vti1-1]);
-					m.addTexCoord(vt[vti2-1]);
-					m.addTexCoord(vt[vti3-1]);
+				if (smooth) {
+					m.addIndex(vi1 - 1);
+					m.addIndex(vi2 - 1);
+					m.addIndex(vi3 - 1);
 				}
-				if(ls.peek() == ' ') {
+				else {
+					m.addVertex(v[vi1 - 1]);
+					m.addVertex(v[vi2 - 1]);
+					m.addVertex(v[vi3 - 1]);
+					m.addTexCoord(vt[vti1 - 1]);
+					m.addTexCoord(vt[vti2 - 1]);
+					m.addTexCoord(vt[vti3 - 1]);
+				}
+				if (ls.peek() == ' ') {
 					int vi4, vti4;
 					ls >> vi4 >> vti4;
-					if(smooth) {
-						m.addIndex(vi1-1);
-						m.addIndex(vi3-1);
-						m.addIndex(vi4-1);
-					} else {
-						m.addVertex(v[vi1-1]); 
-						m.addVertex(v[vi3-1]);
-						m.addVertex(v[vi4-1]);
-						m.addTexCoord(vt[vti1-1]);
-						m.addTexCoord(vt[vti2-1]);
-						m.addTexCoord(vt[vti3-1]);
+					if (smooth) {
+						m.addIndex(vi1 - 1);
+						m.addIndex(vi3 - 1);
+						m.addIndex(vi4 - 1);
+					}
+					else {
+						m.addVertex(v[vi1 - 1]);
+						m.addVertex(v[vi3 - 1]);
+						m.addVertex(v[vi4 - 1]);
+						m.addTexCoord(vt[vti1 - 1]);
+						m.addTexCoord(vt[vti2 - 1]);
+						m.addTexCoord(vt[vti3 - 1]);
 					}
 				}
 			}
@@ -141,47 +189,49 @@ void loadEye(string filename, ofVec3f& leftEyeOffset, ofVec3f& rightEyeOffset) {
 
 ofxFaceShift::ofxFaceShift()
 	:found(false)
-	,imported(false)
-	,blendNeedsUpdating(false) {
+	, imported(false)
+	, blendNeedsUpdating(false) {
 }
 
-void ofxFaceShift::setup(unsigned int port) {	
+void ofxFaceShift::setup(unsigned int port) {
 	udpConnection.Create();
 	udpConnection.Bind(port);
 	udpConnection.SetNonBlocking(true);
-	
+
 	blendshapeNames = ofSplitString(ofBufferFromFile("blendshapes.txt"), "\n");
 }
 
 void ofxFaceShift::import(string modelFolder) {
 	loadEye(modelFolder + "/eye", leftEyeOffset, rightEyeOffset);
-	
+
 	ofDirectory dir(modelFolder);
 	dir.allowExt("obj");
 	dir.listDir();
 	blendshapeMeshes.clear();
-	for(int i = 0; i < dir.size(); i++) {
+	for (int i = 0; i < dir.size(); i++) {
 		ofLog() << "Loading " << dir.getPath(i);
 		ofMesh mesh = loadObj(dir.getPath(i), true);
 		buildNormals(mesh);
-		if(dir.getName(i) == "Neutral.obj") {
+		if (dir.getName(i) == "Neutral.obj") {
 			neutralMesh = mesh;
-		} else {
+		}
+		else {
 			blendshapeMeshes.push_back(mesh);
 		}
 	}
-	
+
 	validBlendPoints.clear();
-	for(int i = 0; i < blendshapeMeshes.size(); i++) {
+	for (int i = 0; i < blendshapeMeshes.size(); i++) {
 		validBlendPoints.push_back(vector<unsigned int>());
-		for(int j = 0; j < blendshapeMeshes[i].getNumVertices(); j++) {
+		for (int j = 0; j < blendshapeMeshes[i].getNumVertices(); j++) {
 			blendshapeMeshes[i].getVertices()[j] -= neutralMesh.getVertices()[j];
-			if(blendshapeMeshes[i].getVertices()[j] != ofVec3f()) {
+			// if (blendshapeMeshes[i].getVertices()[j] != ofVec3f()) { "Error	C2678	binary '!=': no operator found which takes a left-hand operand of type '_Ty' (or there is no acceptable conversion)"
+			if (blendshapeMeshes[i].getVertices()[j] != glm::vec3()) {
 				validBlendPoints[i].push_back(j);
 			}
 		}
 	}
-	
+
 	imported = true;
 }
 
@@ -190,71 +240,73 @@ bool ofxFaceShift::update() {
 	bool newFrame = false;
 	static char message[maxPacketSize];
 	int messageLength = udpConnection.Receive(message, maxPacketSize);
-	if(messageLength > 0) {
+	if (messageLength > 0) {
 		newFrame = true;
 		blendNeedsUpdating = true;
-		
+
 		stringstream data;
 		data.write(message, messageLength);
-		
+
 		unsigned short blockID;
 		unsigned int blockSize;
-		
+
 		readRaw(data, blockID);
 		readRaw(data, versionNumber);
 		readRaw(data, blockSize);
-		
+
 		checkVersion(versionNumber);
 		unsigned short numberBlocks;
 		readRaw(data, numberBlocks);
-		
-		for(int i = 0; i < numberBlocks; i++) {
+
+		for (int i = 0; i < numberBlocks; i++) {
 			readRaw(data, blockID);
 			readRaw(data, versionNumber);
 			readRaw(data, blockSize);
-			
-			switch(blockID) {
-				case FS_FRAME_INFO_BLOCK:
-					readRaw(data, timestamp);
-					readRaw(data, found);
-					break;
-				case FS_POSE_BLOCK:
-					readRaw(data, rotation.x());
-					readRaw(data, rotation.y());
-					readRaw(data, rotation.z());
-					readRaw(data, rotation.w());
-					readRaw(data, position.x);
-					readRaw(data, position.y);
-					readRaw(data, position.z);
-					break;
-				case FS_BLENDSHAPES_BLOCK:
-					blendshapeWeights.clear();
-					unsigned int blendshapeCount;
-					readRaw(data, blendshapeCount);
-					for(int i = 0; i < blendshapeCount; i++) {
-						float blendshapeWeight;
-						readRaw(data, blendshapeWeight);
-						blendshapeWeights.push_back(blendshapeWeight);
-					}
-					break;
-				case FS_EYES_BLOCK:
-					readRaw(data, leftEyeRotation.y);
-					readRaw(data, leftEyeRotation.x);
-					readRaw(data, rightEyeRotation.y);
-					readRaw(data, rightEyeRotation.x);
-					break;
-				case FS_MARKERS_BLOCK:
-					markers.clear();
-					unsigned short markerCount;
-					readRaw(data, markerCount);
-					for(int i = 0; i < markerCount; i++) {
-						ofVec3f marker;
-						readRaw(data, marker.x);
-						readRaw(data, marker.y);
-						readRaw(data, marker.z);
-						markers.push_back(marker);
-					}
-					break;
+
+			switch (blockID) {
+			case FS_FRAME_INFO_BLOCK:
+				readRaw(data, timestamp);
+				readRaw(data, found);
+				break;
+			case FS_POSE_BLOCK:
+				readRaw(data, rotation.x());
+				readRaw(data, rotation.y());
+				readRaw(data, rotation.z());
+				readRaw(data, rotation.w());
+				readRaw(data, position.x);
+				readRaw(data, position.y);
+				readRaw(data, position.z);
+				break;
+			case FS_BLENDSHAPES_BLOCK:
+				blendshapeWeights.clear();
+				unsigned int blendshapeCount;
+				readRaw(data, blendshapeCount);
+				for (int i = 0; i < blendshapeCount; i++) {
+					float blendshapeWeight;
+					readRaw(data, blendshapeWeight);
+					blendshapeWeights.push_back(blendshapeWeight);
+					//For Debugging, prints out the blendshape number and the value of the blendshape, as puff and sneer dont appear to be working. 
+					cout << "blendshape #" << i << ": " << blendshapeWeight << endl;
+				}
+				break;
+			case FS_EYES_BLOCK:
+				readRaw(data, leftEyeRotation.y);
+				readRaw(data, leftEyeRotation.x);
+				readRaw(data, rightEyeRotation.y);
+				readRaw(data, rightEyeRotation.x);
+				break;
+			case FS_MARKERS_BLOCK:
+				markers.clear();
+				unsigned short markerCount;
+				readRaw(data, markerCount);
+				for (int i = 0; i < markerCount; i++) {
+					ofVec3f marker;
+					readRaw(data, marker.x);
+					readRaw(data, marker.y);
+					readRaw(data, marker.z);
+					markers.push_back(marker);
+				}
+				break;
 			}
 		}
 	}
@@ -270,8 +322,8 @@ float ofxFaceShift::getBlendshapeWeight(unsigned int i) const {
 }
 
 float ofxFaceShift::getBlendshapeWeight(const string& blendshapeName) const {
-	for(int i = 0; i < blendshapeNames.size() && i < blendshapeWeights.size(); i++) {
-		if(blendshapeNames[i] == blendshapeName) {
+	for (int i = 0; i < blendshapeNames.size() && i < blendshapeWeights.size(); i++) {
+		if (blendshapeNames[i] == blendshapeName) {
 			return blendshapeWeights[i];
 		}
 	}
@@ -349,12 +401,12 @@ ofVec3f ofxFaceShift::getRightEyeOffset() const {
 }
 
 ofMesh& ofxFaceShift::getBlendMesh() {
-	if(imported && blendNeedsUpdating) {
+	if (imported && blendNeedsUpdating) {
 		blendMesh = neutralMesh;
-		for(int i = 0; i < blendshapeMeshes.size(); i++) {		
+		for (int i = 0; i < blendshapeMeshes.size(); i++) {
 			float weight = getBlendshapeWeight(i);
-			if(weight > 0) {
-				for(int j = 0; j < validBlendPoints[i].size(); j++) {
+			if (weight > 0) {
+				for (int j = 0; j < validBlendPoints[i].size(); j++) {
 					int k = validBlendPoints[i][j];
 					blendMesh.getVertices()[k] += weight * blendshapeMeshes[i].getVertices()[k];
 				}
